@@ -8,10 +8,13 @@ export const Button = ({
   stretch,
   onClick,
   Icon,
+  disabled = false,
+  marginTop = "0",
   customStyle = {},
 }) => {
   return (
     <button
+      disabled={disabled}
       type={type}
       onClick={onClick}
       style={{
@@ -25,8 +28,8 @@ export const Button = ({
         fontSize: "20px",
         padding: "1.2em",
         width: stretch ? "100%" : "fit-content",
-        marginTop: "1em",
         boxShadow: "rgba(100, 100, 111, 0.2) 0px 7px 29px 0px",
+        marginTop: marginTop,
         ...customStyle,
       }}
     >

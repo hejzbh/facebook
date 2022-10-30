@@ -4,8 +4,6 @@ import styled from "styled-components";
 import { colors } from "../../utils/colors";
 // Components
 import { Button } from "../../components/Button";
-// Libaries
-import DatePicker from "react-datepicker";
 // Icons
 import { FcGoogle } from "react-icons/fc";
 // Helpers
@@ -14,9 +12,13 @@ import doesUserEnterNumber from "../../utils/helpers/DoesUserEnterNumber";
 import {
   createUserWithEmailAndPassword,
   signInWithPhoneNumber,
-  RecaptchaVerifier,
 } from "firebase/auth";
 import { auth } from "../../firebase/firebaseConfig";
+// Function used in this component
+import verifyPhoneCode from "../../utils/verifyPhoneCode";
+import generateRecaptcha from "../../utils/generateRecaptcha";
+import signInWithGoogle from "../../utils/signInWithGoogle";
+import storeUserInFirestore from "../../firebase/firestore/SetUser";
 
 export const RegisterForm = () => {
   const [registerData, setRegisterData] = useState({
@@ -28,28 +30,12 @@ export const RegisterForm = () => {
     gender: "",
     number: "",
   });
+  const [isVerificationSent, setIsVerificationSent] = useState(false);
+  const [verificationCode, setVerificationCode] = useState("");
   const [message, setMessage] = useState({
     value: "",
     type: "",
   });
-  const [showPassword, setShowPassword] = useState(false);
-
-  const handleInputChange = (e) => {
-    const { name, type, value } = e.target;
-    let inputValue = value;
-    let inputName = name;
-
-    if (type == "date") inputValue = new Date(value).toDateString();
-
-    // In case user entering a number besides the email
-    if (doesUserEnterNumber(inputName, inputValue)) {
-      inputName = "number";
-      inputValue = +inputValue || ""; // convert to number
-      removeEmail();
-    }
-
-    setRegisterData((data) => ({ ...data, [inputName]: inputValue }));
-  };
 
   const removeEmail = () =>
     setRegisterData((data) => {
@@ -59,45 +45,77 @@ export const RegisterForm = () => {
       return newData;
     });
 
-  const loginWithGoogle = () => {};
-
   const register = async (e) => {
     e.preventDefault();
     try {
-      const phoneVerify = new RecaptchaVerifier(
-        "recaptcha-container",
-        {
-          size: "normal",
-          callback: (response) => {
-            // reCAPTCHA solved, allow signInWithPhoneNumber.
-            // ...
-            console.log("POSLAN KOD");
-          },
-          "expired-callback": () => {
-            // Response expired. Ask user to solve reCAPTCHA again.
-            // ...
-            console.log("ISTEKLO VRIJEME");
-          },
-        },
-        auth
-      );
-      const registering = registerData.email
+      // If user entered email create profile with email, if user entered number, create profile with phone number.
+      const registring = registerData.email
         ? await createUserWithEmailAndPassword(
             auth,
             registerData.email,
             registerData.password
-          )
-        : signInWithPhoneNumber(auth, registerData.number, phoneVerify)
-            .then((success) => {
-              console.log(success);
-            })
-            .catch((err) => {
-              console.log(err);
+          ).then((result) => {
+            storeUserInFirestore(result.user.uid, {
+              displayName: `${registerData.firstName} ${registerData.lastName}`,
+              spelledName:
+                `${registerData.firstName} ${registerData.lastName}`.split(
+                  ""
+                ) || null,
+              gender: registerData.gender,
+              birthDate: registerData.birthDate,
+              number: registerData.number,
+              email: registerData.email || null,
+              photoURL: null,
             });
+          })
+        : await createUserWithPhoneNumber();
     } catch (err) {
       alert(err);
     }
   };
+
+  const handleInputChange = (e) => {
+    const { name, type, value } = e.target;
+    let inputValue = value;
+    let inputName = name;
+
+    if (type == "date") inputValue = new Date(value).toISOString();
+
+    // In case user entering a number besides the email
+    if (doesUserEnterNumber(inputName, inputValue)) {
+      inputName = "number";
+      removeEmail();
+    }
+
+    setRegisterData((data) => ({ ...data, [inputName]: inputValue }));
+  };
+
+  async function createUserWithPhoneNumber() {
+    // Generate recaptcha code
+    generateRecaptcha();
+    // Get recaptcha verifier
+    const appVerifier = window.RecaptchaVerifier;
+    // Try to login with number
+    await signInWithPhoneNumber(auth, registerData.number, appVerifier)
+      .then((confirmationResult) => {
+        // Code has successfully sent to user's mobile
+        setIsVerificationSent(true);
+        // Display message about success sent
+        setMessage({
+          type: "success",
+          value: "Poslan vam je kod na broj",
+        });
+        // Store results in window variable for next procedure
+        window.confirmationResult = confirmationResult;
+      })
+      .catch((err) => {
+        setMessage({
+          type: "error",
+          value: err.message,
+        });
+      });
+  }
+
   return (
     <FormContainer>
       <Form onSubmit={register}>
@@ -107,6 +125,7 @@ export const RegisterForm = () => {
           </p>
         )}
 
+        {/** First and last name */}
         <InputRow>
           <Input
             placeholder="Ime"
@@ -132,16 +151,17 @@ export const RegisterForm = () => {
           value={registerData.email ? registerData.email : registerData.number}
           onChange={handleInputChange}
         />
+
         {/** Password */}
         <Input
           placeholder="Password"
           name="password"
-          type={showPassword ? "text" : "password"}
+          type={"password"}
           value={registerData.password}
           onChange={handleInputChange}
         />
 
-        {/** Date time picker */}
+        {/** Birthdate picker */}
         <Input
           placeholder="Datum rodjenja"
           name="birthDate"
@@ -149,6 +169,28 @@ export const RegisterForm = () => {
           value={registerData.birthDate}
           onChange={handleInputChange}
         />
+
+        {/** Verification code for mobile if it exists */}
+        {isVerificationSent && (
+          <InputRow>
+            <Input
+              placeholder="Kod"
+              max={6}
+              value={verificationCode}
+              onChange={(e) => setVerificationCode(e.target.value)}
+            />
+            <Button
+              title="Verifikuj kod"
+              type="button"
+              color="#fff"
+              disabled={verificationCode.length !== 6}
+              bg={colors.green}
+              onClick={() =>
+                verifyPhoneCode(verificationCode, registerData, setMessage)
+              }
+            />
+          </InputRow>
+        )}
 
         {/** Gender */}
         <InputRow>
@@ -175,6 +217,7 @@ export const RegisterForm = () => {
             type="submit"
             color="#fff"
             bg={colors.facebookBlue}
+            marginTop="1em"
             stretch={true}
           />
           {/** Submit for google */}
@@ -184,11 +227,14 @@ export const RegisterForm = () => {
             }}
             type="button"
             color="#fff"
-            onClick={loginWithGoogle}
+            onClick={() => signInWithGoogle(setMessage)}
             Icon={<FcGoogle fontSize={22} />}
+            marginTop="1em"
             bg={"#fff"}
           />
         </ButtonsRow>
+
+        <div id="recaptcha-container"></div>
       </Form>
     </FormContainer>
   );

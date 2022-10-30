@@ -1,2 +1,1 @@
-export default (name, value) =>
-  name === "email" && value !== "" && !isNaN(+value);
+export default (name, value) => name === "email" && !isNaN(+value);

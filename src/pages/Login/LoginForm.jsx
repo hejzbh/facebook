@@ -12,6 +12,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
 } from "firebase/auth";
+import DoesUserEnterNumber from "../../utils/helpers/DoesUserEnterNumber";
 
 export const LoginForm = () => {
   const [loginData, setLoginData] = useState({
@@ -55,7 +56,15 @@ export const LoginForm = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setLoginData((loginData) => ({ ...loginData, [name]: value }));
+    let inputName = name;
+    if (DoesUserEnterNumber(inputName, value)) {
+      inputName = "number";
+      setLoginData((loginData) => {
+        delete loginData.email;
+        return loginData;
+      });
+    }
+    setLoginData((loginData) => ({ ...loginData, [inputName]: value }));
   };
 
   return (
